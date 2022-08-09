@@ -93,7 +93,7 @@ def get_portfolio_weights(portfolio_df):
         lambda x: x['holding'] * x['price']).reset_index()
     df_1 = pd.merge(date_grp_asset, date_grp_total, on=['date'])
     df_1['weight'] = df_1[0] / df_1['total_position']
-    return df_1[['date', 'security_id', 'code', 'weight']]
+    return df_1[['date', 'security_id', 'code', 'total_position', 'weight']]
 
 
 def get_portfolio_weighted_returns(portfolio):
@@ -220,6 +220,26 @@ def get_portfolio_expected_returns(port, start_date, end_date, col=None):
         return port['weighted_return'].mean()
 
 
+def get_total_position_value(df, date, column_name):
+    return df[df['date'] == date].iloc[0, df.columns.get_loc(column_name)]
+
+
+def get_excess_return_new(port, index, column_names, start_date=None, end_date=None):
+    if start_date is None and end_date is None:
+        p0 = get_total_position_value(port, EXCESS_RETURN_START, column_names[0])
+        p1 = get_total_position_value(port, EXCESS_RETURN_END, column_names[0])
+        i0 = get_total_position_value(index, EXCESS_RETURN_START, column_names[1])
+        i1 = get_total_position_value(index, EXCESS_RETURN_END, column_names[1])
+        port_return = p1 / p0 - 1
+        index_return = i1 / i0 - 1
+        if (port_return > 0 and index_return > 0) or (port_return < 0 and index_return < 0):
+            return port_return - index_return
+        elif port_return < 0 and index_return > 0:
+            return -1 * (abs(port_return) + index_return)
+        elif port_return > 0 and index_return < 0:
+            return 1 * (port_return + abs(index_return))
+
+
 if __name__ == '__main__':
     # Filepath
     db_path = r'C:\Users\U3BR\Downloads\unisuper_assessment.db'
@@ -228,7 +248,7 @@ if __name__ == '__main__':
     START_DATE = '20161230'
     EXCESS_RETURN_START = '20210625'
     EXCESS_RETURN_END = '20220624'
-    # Yield on AUD govie curve at the 6 year mark
+    # Yield on AUD government bond curve at the 6 year mark
     RISK_FREE_RATE = 2.969 / 100
 
     # Tables
@@ -269,6 +289,10 @@ if __name__ == '__main__':
     # Create index top 30, market capped. Calculate rebalanced for quarter ends
     top30_index = rebalance(TOP30, START_DATE, Pricing_df)
     top30_index_rebalanced = add_quaterly_rebalance(TOP30, Pricing_df, top30_index).sort_values(by='date')
+    port_1r, port_2r, port_3r = (
+        get_excess_return_new(Weights[0], top30_index_rebalanced, ['total_position', 'total_index_value']),
+        get_excess_return_new(Weights[1], top30_index_rebalanced, ['total_position', 'total_index_value']),
+        get_excess_return_new(Weights[2], top30_index_rebalanced, ['total_position', 'total_index_value']),)
     top30_index_rebalanced = pd.merge(top30_index_rebalanced, Security_pricing.drop_duplicates(subset=['security_id']),
                                       how='left', on=['security_id'])
 
@@ -298,9 +322,9 @@ if __name__ == '__main__':
                   'TOP30_index': index_volatility}
 
     excess_return_annual = {
-        'Portfolio1': get_portfolio_excess_returns(Weighted_returns[0], top30_quaterly_weighted_returns),
-        'Portfolio2': get_portfolio_excess_returns(Weighted_returns[1], top30_quaterly_weighted_returns),
-        'Portfolio3': get_portfolio_excess_returns(Weighted_returns[2], top30_quaterly_weighted_returns),
+        'Portfolio1': port_1r,
+        'Portfolio2': port_2r,
+        'Portfolio3': port_3r,
         'TOP30_index': 0}
 
     sharp_ratio = {
@@ -314,9 +338,9 @@ if __name__ == '__main__':
                               volatility.values(), sharp_ratio.values()))
 
     # Risk Return Plots
-    X1, X2, Y1, Y2 = volatility['Portfolio1'], volatility['Portfolio2'], expected_returns['Portfolio1'], expected_returns['Portfolio2']
-    X3, X4, Y3, Y4 = volatility['Portfolio1'], volatility['Portfolio3'], expected_returns['Portfolio1'], expected_returns['Portfolio3']
-    X5, X6, Y5, Y6 = volatility['Portfolio2'], volatility['Portfolio3'], expected_returns['Portfolio2'], expected_returns['Portfolio3']
+    X1, X2, Y1, Y2 = volatility['Portfolio1'], volatility['Portfolio2'], expected_returns['Portfolio1'] ,expected_returns['Portfolio2']
+    X3, X4, Y3, Y4 = volatility['Portfolio1'], volatility['Portfolio3'], expected_returns['Portfolio1'] ,expected_returns['Portfolio3']
+    X5, X6, Y5, Y6 = volatility['Portfolio2'], volatility['Portfolio3'], expected_returns['Portfolio2'] ,expected_returns['Portfolio3']
     plt.xlabel('Risk(sigma)')
     plt.ylabel('Expected portfolio return E(R)')
     plt.title('Risk Return Plot')
